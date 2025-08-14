@@ -4,9 +4,12 @@ import android.util.Log
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import kotlinx.coroutines.Dispatchers
@@ -19,6 +22,12 @@ import java.io.IOException
 
 data class Flashcard(val question: String, val answer: String)
 
+data class QuizQuestion(
+    val question: String,
+    val options: List<String>,
+    val correctAnswerIndex: Int
+)
+
 @Composable
 fun FlashcardScreen(navController: NavController) {
     val syllabusText = navController.previousBackStackEntry
@@ -28,6 +37,10 @@ fun FlashcardScreen(navController: NavController) {
     var flashcards by remember { mutableStateOf<List<Flashcard>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var isQuizMode by remember { mutableStateOf(false) }
+    var quizQuestions by remember { mutableStateOf<List<QuizQuestion>>(emptyList()) }
+    var userAnswers by remember { mutableStateOf<List<Int>>(emptyList()) }
+    var showScore by remember { mutableStateOf(false) }
 
     val scope = rememberCoroutineScope()
 
@@ -81,6 +94,42 @@ fun FlashcardScreen(navController: NavController) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
+        // Mode toggle buttons
+        if (!isLoading && flashcards.isNotEmpty()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = {
+                        isQuizMode = false
+                        showScore = false
+                    },
+                    modifier = Modifier.weight(1f),
+                    colors = if (!isQuizMode) ButtonDefaults.buttonColors()
+                            else ButtonDefaults.outlinedButtonColors()
+                ) {
+                    Text("Flashcard Mode")
+                }
+
+                Button(
+                    onClick = {
+                        isQuizMode = true
+                        showScore = false
+                        quizQuestions = generateQuizQuestions(flashcards)
+                        userAnswers = List(quizQuestions.size) { -1 }
+                    },
+                    modifier = Modifier.weight(1f),
+                    colors = if (isQuizMode) ButtonDefaults.buttonColors()
+                            else ButtonDefaults.outlinedButtonColors()
+                ) {
+                    Text("Quiz Mode")
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+
         if (isLoading) {
             CircularProgressIndicator()
             Text("Generating flashcards...", style = MaterialTheme.typography.bodyMedium)
@@ -101,17 +150,31 @@ fun FlashcardScreen(navController: NavController) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             } else {
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(flashcards) { card ->
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 8.dp)
-                        ) {
-                            Column(modifier = Modifier.padding(16.dp)) {
-                                Text("Q: ${card.question}", style = MaterialTheme.typography.titleMedium)
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text("A: ${card.answer}", style = MaterialTheme.typography.bodyMedium)
+                if (isQuizMode) {
+                    QuizModeContent(
+                        quizQuestions = quizQuestions,
+                        userAnswers = userAnswers,
+                        onAnswerSelected = { questionIndex, answerIndex ->
+                            userAnswers = userAnswers.toMutableList().apply {
+                                set(questionIndex, answerIndex)
+                            }
+                        },
+                        showScore = showScore,
+                        onSubmit = { showScore = true }
+                    )
+                } else {
+                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                        items(flashcards) { card ->
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 8.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Text("Q: ${card.question}", style = MaterialTheme.typography.titleMedium)
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text("A: ${card.answer}", style = MaterialTheme.typography.bodyMedium)
+                                }
                             }
                         }
                     }
@@ -284,5 +347,152 @@ private fun parseTextFormat(text: String, flashcards: MutableList<Flashcard>) {
     // Add the last flashcard
     if (currentQuestion.isNotEmpty() && currentAnswer.isNotEmpty()) {
         flashcards.add(Flashcard(currentQuestion, currentAnswer))
+    }
+}
+
+fun generateQuizQuestions(flashcards: List<Flashcard>): List<QuizQuestion> {
+    if (flashcards.size < 4) return emptyList() // Need at least 4 flashcards for multiple choice
+
+    val selectedFlashcards = flashcards.shuffled().take(minOf(10, flashcards.size))
+    val allAnswers = flashcards.map { it.answer }
+
+    return selectedFlashcards.map { flashcard ->
+        val correctAnswer = flashcard.answer
+        val incorrectAnswers = allAnswers.filter { it != correctAnswer }.shuffled().take(3)
+        val allOptions = (listOf(correctAnswer) + incorrectAnswers).shuffled()
+        val correctIndex = allOptions.indexOf(correctAnswer)
+
+        QuizQuestion(
+            question = flashcard.question,
+            options = allOptions,
+            correctAnswerIndex = correctIndex
+        )
+    }
+}
+
+@Composable
+fun QuizModeContent(
+    quizQuestions: List<QuizQuestion>,
+    userAnswers: List<Int>,
+    onAnswerSelected: (Int, Int) -> Unit,
+    showScore: Boolean,
+    onSubmit: () -> Unit
+) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        if (showScore) {
+            val correctAnswers = quizQuestions.indices.count { index ->
+                userAnswers.getOrNull(index) == quizQuestions[index].correctAnswerIndex
+            }
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "Quiz Complete!",
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Your Score: $correctAnswers / ${quizQuestions.size}",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                    val percentage = (correctAnswers.toFloat() / quizQuestions.size * 100).toInt()
+                    Text(
+                        text = "($percentage%)",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
+            }
+        }
+
+        LazyColumn(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            items(quizQuestions.size) { questionIndex ->
+                val question = quizQuestions[questionIndex]
+                val selectedAnswer = userAnswers.getOrNull(questionIndex) ?: -1
+
+                Card(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = "Question ${questionIndex + 1}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = question.question,
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        question.options.forEachIndexed { optionIndex, option ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .selectable(
+                                        selected = selectedAnswer == optionIndex,
+                                        onClick = {
+                                            if (!showScore) {
+                                                onAnswerSelected(questionIndex, optionIndex)
+                                            }
+                                        },
+                                        role = Role.RadioButton
+                                    )
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = selectedAnswer == optionIndex,
+                                    onClick = null,
+                                    enabled = !showScore
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = option,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = if (showScore) {
+                                        when {
+                                            optionIndex == question.correctAnswerIndex -> MaterialTheme.colorScheme.primary
+                                            selectedAnswer == optionIndex && optionIndex != question.correctAnswerIndex -> MaterialTheme.colorScheme.error
+                                            else -> MaterialTheme.colorScheme.onSurface
+                                        }
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurface
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (!showScore && quizQuestions.isNotEmpty()) {
+            val allAnswered = userAnswers.size == quizQuestions.size && userAnswers.all { it != -1 }
+
+            Button(
+                onClick = onSubmit,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 16.dp),
+                enabled = allAnswered
+            ) {
+                Text("Submit Quiz")
+            }
+        }
     }
 }
