@@ -4,9 +4,12 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseAuthException
+import com.google.firebase.auth.UserProfileChangeRequest
+import com.google.firebase.firestore.FirebaseFirestore
 
 class AuthViewModel : ViewModel() {
     private val auth = FirebaseAuth.getInstance()
+    private val firestore = FirebaseFirestore.getInstance()
 
     fun login(email: String, password: String, onResult: (Boolean, String?) -> Unit) {
         Log.d("AuthViewModel", "Login attempt for email: $email")
@@ -44,12 +47,12 @@ class AuthViewModel : ViewModel() {
             }
     }
 
-    fun signup(email: String, password: String, onResult: (Boolean, String?) -> Unit) {
+    fun signup(email: String, password: String, fullName: String, onResult: (Boolean, String?) -> Unit) {
         Log.d("AuthViewModel", "Signup attempt for email: $email")
 
-        if (email.isBlank() || password.isBlank()) {
-            Log.d("AuthViewModel", "Signup failed: Empty email or password")
-            onResult(false, "Email and password cannot be empty")
+        if (email.isBlank() || password.isBlank() || fullName.isBlank()) {
+            Log.d("AuthViewModel", "Signup failed: Empty required fields")
+            onResult(false, "All fields are required")
             return
         }
 
@@ -62,8 +65,24 @@ class AuthViewModel : ViewModel() {
         auth.createUserWithEmailAndPassword(email, password)
             .addOnCompleteListener { task ->
                 if (task.isSuccessful) {
-                    Log.d("AuthViewModel", "Signup successful for user: ${auth.currentUser?.uid}")
-                    onResult(true, null)
+                    val user = auth.currentUser
+                    user?.let {
+                        // Update user profile with display name
+                        val profileUpdates = UserProfileChangeRequest.Builder()
+                            .setDisplayName(fullName)
+                            .build()
+
+                        it.updateProfile(profileUpdates)
+                            .addOnCompleteListener { profileTask ->
+                                if (profileTask.isSuccessful) {
+                                    // Also save to Firestore for additional user data
+                                    saveUserToFirestore(it.uid, fullName, email, onResult)
+                                } else {
+                                    Log.e("AuthViewModel", "Profile update failed", profileTask.exception)
+                                    onResult(false, "Account created but profile update failed")
+                                }
+                            }
+                    }
                 } else {
                     val exception = task.exception
                     Log.e("AuthViewModel", "Signup failed", exception)
@@ -84,4 +103,29 @@ class AuthViewModel : ViewModel() {
                 }
             }
     }
+
+    private fun saveUserToFirestore(uid: String, fullName: String, email: String, onResult: (Boolean, String?) -> Unit) {
+        val userData = hashMapOf(
+            "fullName" to fullName,
+            "email" to email,
+            "createdAt" to System.currentTimeMillis()
+        )
+
+        firestore.collection("users").document(uid)
+            .set(userData)
+            .addOnSuccessListener {
+                Log.d("AuthViewModel", "User data saved to Firestore")
+                onResult(true, null)
+            }
+            .addOnFailureListener { exception ->
+                Log.e("AuthViewModel", "Failed to save user data", exception)
+                onResult(false, "Account created but failed to save user data")
+            }
+    }
+
+    fun logout() {
+        auth.signOut()
+    }
+
+    fun getCurrentUser() = auth.currentUser
 }

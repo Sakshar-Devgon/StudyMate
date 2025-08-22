@@ -3,6 +3,7 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.google.gms.google.services)
+    id("kotlin-kapt")
 }
 
 android {
@@ -58,6 +59,34 @@ dependencies {
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
     implementation(libs.firebase.auth)
+
+    implementation(platform("com.google.firebase:firebase-bom:33.1.2"))
+
+
+    // Navigation
+    implementation("androidx.navigation:navigation-compose:2.7.6")
+
+    // Room Database
+    implementation("androidx.room:room-runtime:2.6.1")
+    implementation("androidx.room:room-ktx:2.6.1")
+    kapt("androidx.room:room-compiler:2.6.1")
+
+    // ViewModel and LiveData
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
+    implementation("androidx.lifecycle:lifecycle-livedata-ktx:2.7.0")
+
+    // Firestore
+    implementation("com.google.firebase:firebase-firestore:24.10.0")
+
+
+
+    // HTTP Client
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("org.json:json:20231013")
+
+    // Animation
+    implementation("androidx.compose.animation:animation:1.5.4")
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
@@ -65,11 +94,15 @@ dependencies {
     androidTestImplementation(libs.androidx.ui.test.junit4)
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
-    implementation ("androidx.navigation:navigation-compose:2.7.3")
-    implementation ("com.squareup.okhttp3:okhttp:4.9.0")
-    implementation ("org.json:json:20210307")
+
+    implementation ("androidx.compose.material:material-icons-extended:1.6.8")
+
+    implementation ("androidx.compose.material3:material3:1.2.1")
+
+
 
 
 
 
 }
+

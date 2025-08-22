@@ -13,3 +13,15 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# API Keys and Sensitive Configuration
+app/google-services.json
+app/src/main/res/values/api_keys.xml
+.env
+secrets.properties
+keystore.properties
+
+# Firebase and Google Services
+google-services.json
+firebase-debug.log
+.firebase/
